@@ -50,8 +50,10 @@ open_issue() { # title body -> creates or comments on an open issue with that ti
   local title="$1" body="$2" num
   if [ "$DRY_RUN" = "true" ]; then echo "DRY RUN: would file issue: $title"; return 0; fi
   body="$(printf '%s\n\nRun: %s\n\ncc @%s' "$body" "$RUN_URL" "${GITHUB_REPOSITORY_OWNER:-}")"
-  num="$(gh_fork issue list --state open --search "\"$title\" in:title" --json number,title \
-    --jq "map(select(.title == \"$title\")) | .[0].number // empty")"
+  # List (not --search): the search index is eventually consistent and misses
+  # an issue filed seconds earlier, which produced duplicates.
+  num="$(TITLE="$title" gh_fork issue list --state open --limit 200 --json number,title \
+    --jq 'map(select(.title == env.TITLE)) | .[0].number // empty')"
   if [ -n "$num" ]; then
     gh_fork issue comment "$num" --body "$body" >/dev/null && echo "Commented on existing issue #$num."
   else
@@ -61,6 +63,9 @@ open_issue() { # title body -> creates or comments on an open issue with that ti
 
 on_error() {
   local rc=$? line="$1"
+  # set -E propagates this trap into subshells; only the top-level shell reports,
+  # otherwise one failure files two issues (subshell, then parent).
+  if [ "${BASHPID:-$$}" != "$$" ]; then exit "$rc"; fi
   trap - ERR
   git rebase --abort >/dev/null 2>&1 || true
   open_issue "upstream-sync failed: ${PKG_NAME}" \
