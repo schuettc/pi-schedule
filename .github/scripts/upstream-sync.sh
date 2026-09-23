@@ -19,16 +19,22 @@
 #   PKG_DIR          package directory relative to the repo root ("." for root)
 #   TAG_PREFIX       git tag prefix for releases, e.g. "v" or "pi-auto-review-v"
 # Optional env:
+#   TEST_CMD         command run (repo root) after the rebase, before anything is published.
+#                    Must install its own deps. Failure = issue + no publish. A clean rebase
+#                    is not proof our patches still work; this is.
 #   BUILD_CMD        command run (repo root) before packing, when the package ships built output.
 #                    The isolated copy is published with --ignore-scripts, so any build the
 #                    package's own prepack/prepublishOnly would do MUST happen here.
 #   FORCE            "true" publishes even when already in sync
+#   DRY_RUN          "true" runs everything (rebase, test, build, stamp, npm pack) but never
+#                    publishes, pushes, tags, or files issues. Proves the pipeline end to end.
 #   NOTIFY_TEST      "true" opens + closes a test issue to prove notifications, then exits
 # Provided by Actions: GITHUB_REPOSITORY, GITHUB_REPOSITORY_OWNER, GITHUB_SERVER_URL, GITHUB_RUN_ID, GH_TOKEN
 set -Eeuo pipefail
 
 : "${UPSTREAM_REPO:?}" "${UPSTREAM_BRANCH:?}" "${PKG_NAME:?}" "${PKG_DIR:?}" "${TAG_PREFIX:?}"
 FORCE="${FORCE:-false}"
+DRY_RUN="${DRY_RUN:-false}"
 NOTIFY_TEST="${NOTIFY_TEST:-false}"
 BRANCH="schuettc-publish"
 FORK="${GITHUB_REPOSITORY:?}"
@@ -42,6 +48,7 @@ gh_fork() { gh "$@" -R "$FORK"; }
 
 open_issue() { # title body -> creates or comments on an open issue with that title
   local title="$1" body="$2" num
+  if [ "$DRY_RUN" = "true" ]; then echo "DRY RUN: would file issue: $title"; return 0; fi
   body="$(printf '%s\n\nRun: %s\n\ncc @%s' "$body" "$RUN_URL" "${GITHUB_REPOSITORY_OWNER:-}")"
   num="$(gh_fork issue list --state open --search "\"$title\" in:title" --json number,title \
     --jq "map(select(.title == \"$title\")) | .[0].number // empty")"
@@ -86,7 +93,7 @@ base="$(git merge-base HEAD "$UP")"
 ahead="$(git rev-list --count "${base}..${UP}")"
 echo "${UP} is ${ahead} commit(s) ahead of our base ${base}"
 
-if [ "$ahead" -eq 0 ] && [ "$FORCE" != "true" ]; then
+if [ "$ahead" -eq 0 ] && [ "$FORCE" != "true" ] && [ "$DRY_RUN" != "true" ]; then
   echo "In sync; nothing to publish."
   exit 0
 fi
@@ -127,6 +134,12 @@ next_n="$(BASE="$upstream_ver" PUBLISHED="$published" node -e '
 new_ver="${upstream_ver}-schuettc.${next_n}"
 echo "publishing new version: ${new_ver}"
 
+if [ -n "${TEST_CMD:-}" ]; then
+  PHASE="test"
+  echo "Testing: ${TEST_CMD}"
+  bash -c "$TEST_CMD"
+fi
+
 if [ -n "${BUILD_CMD:-}" ]; then
   PHASE="build"
   echo "Building: ${BUILD_CMD}"
@@ -150,6 +163,12 @@ PKG_NAME="$PKG_NAME" VER="$new_ver" FORK="$FORK" DIR_FIELD="$DIR_FIELD" node -e 
   delete p.private;
   fs.writeFileSync(f, JSON.stringify(p, null, 2) + "\n");
 ' "$pubdir/package.json"
+if [ "$DRY_RUN" = "true" ]; then
+  ( cd "$pubdir" && npm pack --dry-run --ignore-scripts )
+  rm -rf "$pubdir"
+  echo "DRY RUN OK: would publish ${PKG_NAME}@${new_ver} and push ${BRANCH} + tag ${TAG_PREFIX}${new_ver}."
+  exit 0
+fi
 # --ignore-scripts: the copy is already built (BUILD_CMD) and lives outside the
 # repo, so upstream lifecycle hooks (monorepo-relative builds, "publish via CI"
 # guards) would fail or misfire here.
