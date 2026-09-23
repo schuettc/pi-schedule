@@ -1,0 +1,68 @@
+name: upstream-sync
+
+# Standard @schuettc fork sync (tools-ops/templates/fork-sync). Daily and on
+# demand: rebase schuettc-publish onto upstream; on a clean rebase publish the
+# next <upstream-base>-schuettc.N via npm OIDC trusted publishing. Conflicts and
+# failures open a tracking issue that @mentions the owner and fail the run.
+#
+# Per-fork settings live ONLY in `env:` below. The script is byte-identical to
+# the template. npm trusted publisher must name this repo + workflow file
+# `upstream-sync.yml` (no environment).
+
+on:
+  schedule:
+    - cron: "29 9 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Publish the current state even if already in sync"
+        type: boolean
+        default: false
+      dry_run:
+        description: "Run rebase/test/build/pack end to end; publish, push and issue nothing"
+        type: boolean
+        default: false
+      notify_test:
+        description: "Open and close a test issue to prove alerts reach you, then stop"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+  id-token: write
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: "pungggi/pi-schedule"
+  UPSTREAM_BRANCH: "master"
+  PKG_NAME: "@schuettc/pi-schedule"
+  PKG_DIR: "."
+  TAG_PREFIX: "v"
+  TEST_CMD: "npm ci && npm run typecheck && npm test"
+  BUILD_CMD: ""
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: schuettc-publish
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+      - name: Upgrade npm (OIDC trusted publishing needs >= 11.5.1)
+        run: npm install -g npm@latest
+      - name: Sync onto upstream and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          NOTIFY_TEST: ${{ inputs.notify_test }}
+        run: bash .github/scripts/upstream-sync.sh
