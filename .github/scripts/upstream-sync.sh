@@ -19,7 +19,9 @@
 #   PKG_DIR          package directory relative to the repo root ("." for root)
 #   TAG_PREFIX       git tag prefix for releases, e.g. "v" or "pi-auto-review-v"
 # Optional env:
-#   BUILD_CMD        command run (repo root) before packing, when the package ships built output
+#   BUILD_CMD        command run (repo root) before packing, when the package ships built output.
+#                    The isolated copy is published with --ignore-scripts, so any build the
+#                    package's own prepack/prepublishOnly would do MUST happen here.
 #   FORCE            "true" publishes even when already in sync
 #   NOTIFY_TEST      "true" opens + closes a test issue to prove notifications, then exits
 # Provided by Actions: GITHUB_REPOSITORY, GITHUB_REPOSITORY_OWNER, GITHUB_SERVER_URL, GITHUB_RUN_ID, GH_TOKEN
@@ -148,7 +150,10 @@ PKG_NAME="$PKG_NAME" VER="$new_ver" FORK="$FORK" DIR_FIELD="$DIR_FIELD" node -e 
   delete p.private;
   fs.writeFileSync(f, JSON.stringify(p, null, 2) + "\n");
 ' "$pubdir/package.json"
-( cd "$pubdir" && npm publish --provenance --access public --tag latest )
+# --ignore-scripts: the copy is already built (BUILD_CMD) and lives outside the
+# repo, so upstream lifecycle hooks (monorepo-relative builds, "publish via CI"
+# guards) would fail or misfire here.
+( cd "$pubdir" && npm publish --provenance --access public --tag latest --ignore-scripts )
 rm -rf "$pubdir"
 
 # Keep schuettc-publish rebased so tomorrow's run sees ahead=0. The branch keeps
