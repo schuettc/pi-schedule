@@ -32,6 +32,31 @@
 # Provided by Actions: GITHUB_REPOSITORY, GITHUB_REPOSITORY_OWNER, GITHUB_SERVER_URL, GITHUB_RUN_ID, GH_TOKEN
 set -Eeuo pipefail
 
+# stamp_package <package.json>: write the published name, -schuettc.N version
+# and fork repo URLs into an isolated copy's package.json (env PKG_NAME, VER,
+# FORK, DIR_FIELD). The one place stamping lives: the daily flow below calls it,
+# and tools-ops/templates/fork-sync/first-publish.sh reaches it through
+# `upstream-sync.sh --stamp <package.json>`, so a first publish is stamped
+# exactly the way CI stamps.
+stamp_package() {
+  PKG_NAME="$PKG_NAME" VER="$VER" FORK="$FORK" DIR_FIELD="${DIR_FIELD:-}" node -e '
+  const fs = require("fs"), f = process.argv[1], p = JSON.parse(fs.readFileSync(f));
+  const { PKG_NAME, VER, FORK, DIR_FIELD } = process.env;
+  p.name = PKG_NAME;
+  p.version = VER;
+  p.repository = { type: "git", url: `git+https://github.com/${FORK}.git`, ...(DIR_FIELD ? { directory: DIR_FIELD } : {}) };
+  p.homepage = DIR_FIELD ? `https://github.com/${FORK}/tree/schuettc-publish/${DIR_FIELD}#readme` : `https://github.com/${FORK}#readme`;
+  p.bugs = { url: `https://github.com/${FORK}/issues` };
+  delete p.private;
+  fs.writeFileSync(f, JSON.stringify(p, null, 2) + "\n");
+' "$1"
+}
+if [ "${1:-}" = "--stamp" ]; then
+  : "${PKG_NAME:?}" "${VER:?}" "${FORK:?}"
+  stamp_package "${2:?usage: upstream-sync.sh --stamp <package.json>}"
+  exit 0
+fi
+
 : "${UPSTREAM_REPO:?}" "${UPSTREAM_BRANCH:?}" "${PKG_NAME:?}" "${PKG_DIR:?}" "${TAG_PREFIX:?}"
 FORCE="${FORCE:-false}"
 DRY_RUN="${DRY_RUN:-false}"
@@ -157,17 +182,7 @@ fi
 PHASE="publish"
 pubdir="$(mktemp -d)"
 rsync -a --exclude .git --exclude node_modules "${PKG_DIR%/}/" "$pubdir/"
-PKG_NAME="$PKG_NAME" VER="$new_ver" FORK="$FORK" DIR_FIELD="$DIR_FIELD" node -e '
-  const fs = require("fs"), f = process.argv[1], p = JSON.parse(fs.readFileSync(f));
-  const { PKG_NAME, VER, FORK, DIR_FIELD } = process.env;
-  p.name = PKG_NAME;
-  p.version = VER;
-  p.repository = { type: "git", url: `git+https://github.com/${FORK}.git`, ...(DIR_FIELD ? { directory: DIR_FIELD } : {}) };
-  p.homepage = DIR_FIELD ? `https://github.com/${FORK}/tree/schuettc-publish/${DIR_FIELD}#readme` : `https://github.com/${FORK}#readme`;
-  p.bugs = { url: `https://github.com/${FORK}/issues` };
-  delete p.private;
-  fs.writeFileSync(f, JSON.stringify(p, null, 2) + "\n");
-' "$pubdir/package.json"
+VER="$new_ver" stamp_package "$pubdir/package.json"
 if [ "$DRY_RUN" = "true" ]; then
   ( cd "$pubdir" && npm pack --dry-run --ignore-scripts )
   rm -rf "$pubdir"
