@@ -1,6 +1,6 @@
 name: upstream-sync
 
-# Standard @schuettc fork sync (tools-ops/templates/fork-sync). Daily and on
+# Standard @schuettc fork sync (muda kit fork-sync; rendered, do not edit). Daily and on
 # demand: rebase schuettc-publish onto upstream; on a clean rebase publish the
 # next <upstream-base>-schuettc.N via npm OIDC trusted publishing. Conflicts and
 # failures open a tracking issue that @mentions the owner and fail the run.
