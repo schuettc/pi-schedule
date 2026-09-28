@@ -5,3 +5,5 @@ updates:
     target-branch: schuettc-publish
     schedule: { interval: weekly }
     cooldown: { default-days: 3 }
+    allow:
+      - dependency-name: "schuettc/tools-actions"
