@@ -13,7 +13,7 @@ jobs:
   sync:
     runs-on: ubuntu-26.04
     steps:
-      - uses: schuettc/tools-actions/fork-sync@v0.10.2
+      - uses: schuettc/tools-actions/fork-sync@v0.10.3
         with:
           upstream_repo: "pungggi/pi-schedule"
           upstream_branch: "master"
