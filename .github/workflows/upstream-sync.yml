@@ -13,7 +13,7 @@ jobs:
   sync:
     runs-on: ubuntu-26.04
     steps:
-      - uses: schuettc/tools-actions/fork-sync@v0.1.0
+      - uses: schuettc/tools-actions/fork-sync@v0.10.2
         with:
           upstream_repo: "pungggi/pi-schedule"
           upstream_branch: "master"
@@ -21,6 +21,8 @@ jobs:
           pkg_dir: "."
           tag_prefix: "v"
           test_cmd: "npm ci && npm run typecheck && npm test"
+          # Also test on the newest Node release: pi runs on the machine's Node.
+          test_node_versions: "current"
           build_cmd: ""
           force: ${{ inputs.force }}
           dry_run: ${{ inputs.dry_run }}
